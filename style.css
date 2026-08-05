@@ -1,0 +1,120 @@
+/* ============================================================
+   KasirKu – Custom CSS (di luar Tailwind)
+   File: css/style.css
+   ============================================================ */
+
+/* ── Custom Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* ── Animasi Sorotan Transaksi Baru ── */
+@keyframes highlightNew {
+  0%   { background-color: #bbf7d0; box-shadow: 0 0 0 3px #4ade80; }
+  60%  { background-color: #dcfce7; box-shadow: 0 0 0 1px #86efac; }
+  100% { background-color: transparent; box-shadow: none; }
+}
+.tx-highlight-new {
+  animation: highlightNew 2.4s ease-out forwards;
+  border-radius: 0.5rem;
+}
+
+/* ── Animasi Fade-in Halaman ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: fadeInUp 0.28s ease-out forwards; }
+
+/* ── Pulse Badge untuk Live Indicator ── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+.live-dot { animation: livePulse 1.5s ease-in-out infinite; }
+
+/* ── Styling Struk Digital ── */
+.receipt-wrapper {
+  font-family: 'Courier New', Courier, monospace;
+  background: #fff;
+  color: #111;
+  max-width: 320px;
+  margin: 0 auto;
+  padding: 20px 18px;
+  border: 2px dashed #9ca3af;
+  border-radius: 4px;
+  line-height: 1.55;
+}
+.receipt-header {
+  text-align: center;
+  border-bottom: 1px dashed #9ca3af;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+.receipt-header h2  { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.04em; }
+.receipt-header p   { font-size: 0.7rem; color: #6b7280; }
+.receipt-items      { font-size: 0.78rem; }
+.receipt-row        { display: flex; justify-content: space-between; padding: 2px 0; }
+.receipt-row.bold   { font-weight: 700; }
+.receipt-divider    { border: none; border-top: 1px dashed #9ca3af; margin: 8px 0; }
+.receipt-total      { font-size: 0.95rem; font-weight: 700; }
+.receipt-footer     { text-align: center; font-size: 0.68rem; color: #6b7280; margin-top: 10px; border-top: 1px dashed #9ca3af; padding-top: 10px; }
+
+/* ── AI Health Score Ring ── */
+@keyframes ringFill {
+  from { stroke-dashoffset: 440; }
+  to   { stroke-dashoffset: var(--ring-offset); }
+}
+.score-ring circle.progress {
+  stroke-dasharray: 440;
+  stroke-dashoffset: 440;
+  animation: ringFill 1.2s ease-out forwards;
+  transform-origin: center;
+  transform: rotate(-90deg);
+}
+
+/* ── Sidebar Navigation aktif indicator ── */
+.nav-active {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(22,163,74,0.35);
+}
+.nav-active svg { color: #fff !important; }
+
+/* ── Kartu Produk hover ── */
+.product-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.product-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+}
+
+/* ── Toast Notification ── */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-10px) scale(0.95); }
+}
+.toast-enter { animation: toastIn  0.25s ease-out forwards; }
+.toast-exit  { animation: toastOut 0.2s  ease-in  forwards; }
+
+/* ── Modal Overlay ── */
+.modal-overlay {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* ── Spinner ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.8s linear infinite; }
+
+/* ── Print stylesheet untuk struk ── */
+@media print {
+  body > *:not(.receipt-wrapper) { display: none !important; }
+  .receipt-wrapper { border: none; max-width: 100%; }
+}
