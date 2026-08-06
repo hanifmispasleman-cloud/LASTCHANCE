@@ -1,14 +1,12 @@
 <?php
 /**
- * Auth Controller - Controller untuk Authentication
+ * AuthController - Controller untuk authentication
  */
-
-require_once APP_DIR . 'Models/User.php';
 
 class AuthController {
     
-    private $db;
     private $userModel;
+    private $db;
     
     public function __construct($database) {
         $this->db = $database;
@@ -16,211 +14,201 @@ class AuthController {
     }
     
     /**
-     * Show login form
+     * Show login page
      */
-    public function loginForm() {
-        // Jika sudah login redirect ke dashboard
-        if (AuthMiddleware::isAuthenticated()) {
-            redirect('dashboard');
-        }
+    public function login() {
+        AuthMiddleware::checkGuest();
+        SecurityMiddleware::setSecurityHeaders();
         
-        $title = 'Login - KasirKu';
-        $expired = $_GET['expired'] ?? false;
-        
-        require VIEW_DIR . 'auth/login.php';
+        $page_title = 'Login - KasirKu';
+        include APP_PATH . 'Views/Auth/login.php';
     }
     
     /**
      * Process login
      */
-    public function login() {
+    public function doLogin() {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             redirect('auth/login');
         }
         
-        // Validate CSRF token
-        if (!CsrfMiddleware::verifyToken($_POST[CSRF_TOKEN_NAME] ?? '')) {
-            SecurityMiddleware::logSecurityEvent('CSRF_FAILURE', ['action' => 'login']);
-            jsonResponse(false, 'CSRF Token tidak valid', null, 403);
-        }
+        SecurityMiddleware::validateCSRFToken();
+        SecurityMiddleware::checkRateLimit('login', 5, 300);
         
-        // Rate limiting
-        $ip = RateLimitMiddleware::getClientIP();
-        if (!RateLimitMiddleware::check($ip . '_login', 5, 300)) {
-            SecurityMiddleware::logSecurityEvent('LOGIN_RATE_LIMIT', ['ip' => $ip]);
-            jsonResponse(false, 'Terlalu banyak percobaan login. Silakan coba lagi dalam beberapa menit', null, 429);
-        }
-        
-        // Get input
-        $username = sanitize($_POST['username'] ?? '');
+        $email = sanitize($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
+        $remember = isset($_POST['remember']);
         
-        // Validasi input
-        if (empty($username) || empty($password)) {
-            jsonResponse(false, 'Username dan password harus diisi');
+        // Validate input
+        if (empty($email) || empty($password)) {
+            $error = 'Email dan password harus diisi';
+            include APP_PATH . 'Views/Auth/login.php';
+            return;
         }
         
-        // Attempt login
-        $user = $this->userModel->login($username, $password);
+        // Get user
+        $user = $this->userModel->getByEmail($email);
         
-        if (!$user) {
-            SecurityMiddleware::logSecurityEvent('LOGIN_FAILED', ['username' => $username]);
-            jsonResponse(false, 'Username atau password salah');
+        if (!$user || !$this->userModel->verifyPassword($password, $user['password'])) {
+            $error = 'Email atau password salah';
+            include APP_PATH . 'Views/Auth/login.php';
+            return;
+        }
+        
+        if ($user['status'] !== 'active') {
+            $error = 'Akun Anda tidak aktif';
+            include APP_PATH . 'Views/Auth/login.php';
+            return;
         }
         
         // Set session
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['nama_lengkap'] = $user['nama_lengkap'];
-        $_SESSION['role'] = $user['role'];
-        $_SESSION['email'] = $user['email'];
+        $_SESSION['user'] = [
+            'id' => $user['id'],
+            'name' => $user['name'],
+            'email' => $user['email'],
+            'role' => $user['role']
+        ];
+        
         $_SESSION['last_activity'] = time();
         
-        // Log activity
-        logActivity($this->db, 'LOGIN', 'users', $user['id']);
+        // Remember me
+        if ($remember) {
+            $token = bin2hex(random_bytes(32));
+            setcookie('remember_me', $token, time() + (30 * 24 * 60 * 60), '/');
+            // Save token to database for validation
+        }
         
-        // Reset rate limit
-        RateLimitMiddleware::reset($ip . '_login');
+        log_activity('LOGIN', 'User ' . $user['email'] . ' logged in');
         
-        SecurityMiddleware::logSecurityEvent('LOGIN_SUCCESS', ['user_id' => $user['id']]);
-        
-        // Redirect
-        $redirect = $_SESSION['redirect_after_login'] ?? 'dashboard';
-        unset($_SESSION['redirect_after_login']);
-        
-        jsonResponse(true, 'Login berhasil', ['redirect' => BASE_URL . $redirect]);
+        redirect('dashboard');
     }
     
     /**
      * Logout
      */
     public function logout() {
-        AuthMiddleware::requireLogin();
+        if (isset($_SESSION['user'])) {
+            $email = $_SESSION['user']['email'];
+            log_activity('LOGOUT', 'User ' . $email . ' logged out');
+        }
         
-        $user_id = $_SESSION['user_id'];
-        
-        // Log activity
-        logActivity($this->db, 'LOGOUT', 'users', $user_id);
-        
-        // Destroy session
         session_destroy();
-        $_SESSION = [];
-        
-        SecurityMiddleware::logSecurityEvent('LOGOUT_SUCCESS', ['user_id' => $user_id]);
+        setcookie('remember_me', '', time() - 3600, '/');
         
         redirect('auth/login');
     }
     
     /**
-     * Show profile
+     * Show profile page
      */
     public function profile() {
-        AuthMiddleware::requireLogin();
+        AuthMiddleware::checkAuth();
+        AuthMiddleware::checkSessionTimeout();
+        SecurityMiddleware::setSecurityHeaders();
         
-        $user = $this->userModel->getById($_SESSION['user_id']);
-        $title = 'Profile - KasirKu';
+        $user = $this->userModel->getById($_SESSION['user']['id']);
+        $page_title = 'Profil - KasirKu';
         
-        require VIEW_DIR . 'auth/profile.php';
+        include APP_PATH . 'Views/Auth/profile.php';
     }
     
     /**
      * Update profile
      */
     public function updateProfile() {
-        AuthMiddleware::requireLogin();
+        AuthMiddleware::checkAuth();
         
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             redirect('auth/profile');
         }
         
-        if (!CsrfMiddleware::verifyToken($_POST[CSRF_TOKEN_NAME] ?? '')) {
-            jsonResponse(false, 'CSRF Token tidak valid', null, 403);
-        }
+        SecurityMiddleware::validateCSRFToken();
         
-        $user_id = $_SESSION['user_id'];
-        
-        $nama_lengkap = sanitize($_POST['nama_lengkap'] ?? '');
+        $id = $_SESSION['user']['id'];
+        $name = sanitize($_POST['name'] ?? '');
         $email = sanitize($_POST['email'] ?? '');
+        $phone = sanitize($_POST['phone'] ?? '');
         
-        // Validasi
-        ValidationHelper::clearErrors();
-        ValidationHelper::required($nama_lengkap, 'Nama lengkap');
-        ValidationHelper::required($email, 'Email');
-        ValidationHelper::email($email, 'Email');
+        // Validate
+        $errors = [];
+        if (empty($name)) $errors[] = 'Nama tidak boleh kosong';
+        if (empty($email)) $errors[] = 'Email tidak boleh kosong';
+        if (!is_valid_email($email)) $errors[] = 'Email tidak valid';
         
-        if (!ValidationHelper::isEmailAvailable($this->db, $email, 'users', 'email', 'Email', $user_id)) {
-            ValidationHelper::addError('Email sudah digunakan');
-        }
-        
-        if (ValidationHelper::hasErrors()) {
-            jsonResponse(false, ValidationHelper::getFirstError());
+        if (count($errors) > 0) {
+            $_SESSION['errors'] = $errors;
+            redirect('auth/profile');
         }
         
         // Update
-        $data = [
-            'nama_lengkap' => $nama_lengkap,
-            'email' => $email
+        $update_data = [
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone
         ];
         
-        if ($this->userModel->update($user_id, $data)) {
-            $_SESSION['nama_lengkap'] = $nama_lengkap;
-            $_SESSION['email'] = $email;
-            
-            logActivity($this->db, 'UPDATE_PROFILE', 'users', $user_id);
-            
-            jsonResponse(true, 'Profile berhasil diupdate');
+        if ($this->userModel->update($id, $update_data)) {
+            $_SESSION['user']['name'] = $name;
+            $_SESSION['user']['email'] = $email;
+            set_flash('Profil berhasil diperbarui', 'success');
+            log_activity('UPDATE_PROFILE', 'User ' . $email . ' updated their profile');
         } else {
-            jsonResponse(false, 'Gagal update profile');
+            set_flash('Gagal memperbarui profil', 'danger');
         }
+        
+        redirect('auth/profile');
     }
     
     /**
      * Change password
      */
     public function changePassword() {
-        AuthMiddleware::requireLogin();
+        AuthMiddleware::checkAuth();
         
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            jsonResponse(false, 'Invalid request');
+            redirect('auth/profile');
         }
         
-        if (!CsrfMiddleware::verifyToken($_POST[CSRF_TOKEN_NAME] ?? '')) {
-            jsonResponse(false, 'CSRF Token tidak valid', null, 403);
-        }
+        SecurityMiddleware::validateCSRFToken();
         
-        $user_id = $_SESSION['user_id'];
+        $id = $_SESSION['user']['id'];
         $old_password = $_POST['old_password'] ?? '';
         $new_password = $_POST['new_password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
         
-        // Validasi
-        ValidationHelper::clearErrors();
-        ValidationHelper::required($old_password, 'Password lama');
-        ValidationHelper::required($new_password, 'Password baru');
-        ValidationHelper::required($confirm_password, 'Konfirmasi password');
-        ValidationHelper::minLength($new_password, 6, 'Password baru');
+        // Get current user
+        $user = $this->userModel->getById($id);
         
-        if (ValidationHelper::hasErrors()) {
-            jsonResponse(false, ValidationHelper::getFirstError());
+        // Validate
+        $errors = [];
+        if (empty($old_password)) $errors[] = 'Password lama harus diisi';
+        if (empty($new_password)) $errors[] = 'Password baru harus diisi';
+        if (empty($confirm_password)) $errors[] = 'Konfirmasi password harus diisi';
+        
+        if (!$this->userModel->verifyPassword($old_password, $user['password'])) {
+            $errors[] = 'Password lama tidak sesuai';
         }
         
-        // Verify old password
-        if (!$this->userModel->verifyPassword($user_id, $old_password)) {
-            jsonResponse(false, 'Password lama tidak sesuai');
-        }
-        
-        // Confirm password
         if ($new_password !== $confirm_password) {
-            jsonResponse(false, 'Konfirmasi password tidak sesuai');
+            $errors[] = 'Password baru tidak cocok';
+        }
+        
+        if (count($errors) > 0) {
+            $_SESSION['errors'] = $errors;
+            redirect('auth/profile');
         }
         
         // Update password
-        if ($this->userModel->updatePassword($user_id, $new_password)) {
-            logActivity($this->db, 'CHANGE_PASSWORD', 'users', $user_id);
-            jsonResponse(true, 'Password berhasil diubah');
+        $hashed_password = $this->userModel->hashPassword($new_password);
+        
+        if ($this->userModel->update($id, ['password' => $hashed_password])) {
+            set_flash('Password berhasil diubah', 'success');
+            log_activity('CHANGE_PASSWORD', 'User ' . $user['email'] . ' changed their password');
         } else {
-            jsonResponse(false, 'Gagal mengubah password');
+            set_flash('Gagal mengubah password', 'danger');
         }
+        
+        redirect('auth/profile');
     }
 }
 

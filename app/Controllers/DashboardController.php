@@ -1,86 +1,116 @@
 <?php
 /**
- * Dashboard Controller - Controller untuk Dashboard
+ * DashboardController - Controller untuk dashboard
  */
-
-require_once APP_DIR . 'Models/Transaksi.php';
-require_once APP_DIR . 'Models/Produk.php';
-require_once APP_DIR . 'Models/DetailTransaksi.php';
-require_once APP_DIR . 'Models/Kategori.php';
 
 class DashboardController {
     
-    private $db;
-    private $transaksiModel;
+    private $userModel;
     private $produkModel;
-    private $detailTransaksiModel;
-    private $kategoriModel;
+    private $db;
     
     public function __construct($database) {
         $this->db = $database;
-        $this->transaksiModel = new Transaksi($database);
+        $this->userModel = new User($database);
         $this->produkModel = new Produk($database);
-        $this->detailTransaksiModel = new DetailTransaksi($database);
-        $this->kategoriModel = new Kategori($database);
     }
     
     /**
      * Show dashboard
      */
     public function index() {
-        AuthMiddleware::requireLogin();
-        SecurityMiddleware::preventCache();
+        AuthMiddleware::checkAuth();
+        AuthMiddleware::checkSessionTimeout();
+        SecurityMiddleware::setSecurityHeaders();
         
-        // Get dashboard data
-        $total_sales_today = $this->transaksiModel->getTotalTodaysSales();
-        $total_transactions_today = $this->transaksiModel->getTotalTodaysTransactions();
-        $total_products = $this->produkModel->count();
-        $low_stock_products = $this->produkModel->getLowStock(10);
-        $sales_last_7_days = $this->transaksiModel->getSalesLast7Days();
-        $latest_transactions = $this->transaksiModel->getLatestTransactions(10);
-        $top_products = $this->detailTransaksiModel->getTopProducts(5);
+        $user = $_SESSION['user'];
         
-        // Prepare chart data
-        $chart_labels = [];
-        $chart_data = [];
+        // Get stats
+        $stats = [
+            'total_sales' => $this->getTotalSales(),
+            'total_transactions' => $this->getTotalTransactions(),
+            'total_products' => $this->getTotalProducts(),
+            'low_stock' => count($this->produkModel->getLowStock())
+        ];
         
-        foreach ($sales_last_7_days as $sale) {
-            $chart_labels[] = formatDate($sale['tanggal']);
-            $chart_data[] = $sale['total_penjualan'];
-        }
+        // Get chart data
+        $chart_data = $this->getChartData();
+        $chart_labels = $this->getChartLabels();
         
-        $title = 'Dashboard - KasirKu';
+        // Get recent transactions
+        $recent_transactions = $this->getRecentTransactions();
         
-        require VIEW_DIR . 'dashboard/index.php';
+        $page_title = 'Dashboard - KasirKu';
+        
+        include APP_PATH . 'Views/Dashboard/index.php';
     }
     
     /**
-     * Get dashboard data as JSON (for AJAX)
+     * Get total sales this month
      */
-    public function getData() {
-        AuthMiddleware::requireLogin();
-        header('Content-Type: application/json');
-        
-        $total_sales_today = $this->transaksiModel->getTotalTodaysSales();
-        $total_transactions_today = $this->transaksiModel->getTotalTodaysTransactions();
-        $total_products = $this->produkModel->count();
-        $low_stock_products = $this->produkModel->getLowStock(10);
-        $latest_transactions = $this->transaksiModel->getLatestTransactions(10);
-        
-        $response = [
-            'success' => true,
-            'data' => [
-                'total_sales_today' => $total_sales_today,
-                'total_transactions_today' => $total_transactions_today,
-                'total_products' => $total_products,
-                'low_stock_count' => count($low_stock_products),
-                'low_stock_products' => $low_stock_products,
-                'latest_transactions' => $latest_transactions
-            ]
-        ];
-        
-        echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        exit();
+    private function getTotalSales() {
+        $query = "SELECT SUM(total) as total FROM transactions 
+                  WHERE MONTH(created_at) = MONTH(NOW()) 
+                  AND YEAR(created_at) = YEAR(NOW())";
+        $result = $this->db->query($query);
+        $data = $result->fetch_assoc();
+        return $data['total'] ?? 0;
+    }
+    
+    /**
+     * Get total transactions this month
+     */
+    private function getTotalTransactions() {
+        $query = "SELECT COUNT(*) as total FROM transactions 
+                  WHERE MONTH(created_at) = MONTH(NOW()) 
+                  AND YEAR(created_at) = YEAR(NOW())";
+        $result = $this->db->query($query);
+        $data = $result->fetch_assoc();
+        return $data['total'] ?? 0;
+    }
+    
+    /**
+     * Get total products
+     */
+    private function getTotalProducts() {
+        return $this->produkModel->count(['status' => 'active']);
+    }
+    
+    /**
+     * Get chart data (sales last 7 days)
+     */
+    private function getChartData() {
+        $data = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = date('Y-m-d', strtotime("-$i days"));
+            $query = "SELECT SUM(total) as total FROM transactions WHERE DATE(created_at) = ?";
+            $stmt = $this->db->prepare($query);
+            $stmt->bind_param('s', $date);
+            $stmt->execute();
+            $result = $stmt->get_result()->fetch_assoc();
+            $data[] = $result['total'] ?? 0;
+        }
+        return $data;
+    }
+    
+    /**
+     * Get chart labels (dates)
+     */
+    private function getChartLabels() {
+        $labels = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $labels[] = date('d/m', strtotime("-$i days"));
+        }
+        return $labels;
+    }
+    
+    /**
+     * Get recent transactions
+     */
+    private function getRecentTransactions() {
+        $query = "SELECT * FROM transactions ORDER BY created_at DESC LIMIT 5";
+        $result = $this->db->query($query);
+        return $result->fetch_all(MYSQLI_ASSOC);
     }
 }
 

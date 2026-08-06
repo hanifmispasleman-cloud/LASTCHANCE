@@ -1,286 +1,210 @@
 <?php
 /**
- * Produk Controller - Controller untuk Manajemen Produk
+ * ProdukController - Controller untuk produk
  */
-
-require_once APP_DIR . 'Models/Produk.php';
-require_once APP_DIR . 'Models/Kategori.php';
 
 class ProdukController {
     
-    private $db;
     private $produkModel;
-    private $kategoriModel;
+    private $db;
     
     public function __construct($database) {
         $this->db = $database;
         $this->produkModel = new Produk($database);
-        $this->kategoriModel = new Kategori($database);
     }
     
     /**
-     * List semua produk
+     * List all products
      */
     public function index() {
-        AuthMiddleware::requireLogin();
+        AuthMiddleware::checkAuth();
+        AuthMiddleware::checkSessionTimeout();
+        SecurityMiddleware::setSecurityHeaders();
         
-        $page = getCurrentPage();
-        $per_page = ITEMS_PER_PAGE;
-        $offset = getPageOffset($page, $per_page);
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $limit = 10;
+        $offset = ($page - 1) * $limit;
         
-        // Get search parameter
-        $search = sanitize($_GET['search'] ?? '');
-        $kategori_id = (int)($_GET['kategori_id'] ?? 0);
-        
-        // Get data
-        if (!empty($search)) {
-            $produk_list = $this->produkModel->searchWithCategory($search, $kategori_id ?: null, $per_page, $offset);
-            $total = count($produk_list); // Simplified count
-        } else {
-            $produk_list = $this->produkModel->getActive($per_page, $offset);
-            $total = $this->produkModel->count();
+        // Build filters
+        $filters = [];
+        if (isset($_GET['search']) && !empty($_GET['search'])) {
+            $filters['search'] = sanitize($_GET['search']);
+        }
+        if (isset($_GET['category']) && !empty($_GET['category'])) {
+            $filters['category_id'] = (int)$_GET['category'];
         }
         
-        $kategori_list = $this->kategoriModel->getWithProductCount();
-        $pagination = generatePagination($total, $per_page, $page, 'produk');
-        $title = 'Manajemen Produk - KasirKu';
+        // Get products
+        $produk = $this->produkModel->getAll($limit, $offset, $filters);
+        $total = $this->produkModel->count($filters);
         
-        require VIEW_DIR . 'produk/index.php';
+        // Get categories
+        $categories = $this->getCategories();
+        
+        $page_title = 'Produk - KasirKu';
+        
+        if (isset($_SESSION['flash'])) {
+            $success = $_SESSION['flash']['message'];
+            unset($_SESSION['flash']);
+        }
+        
+        include APP_PATH . 'Views/Produk/index.php';
     }
     
     /**
-     * Show create produk form
+     * Show create/edit form
      */
-    public function create() {
-        AuthMiddleware::requireAnyRole([ROLE_ADMIN, ROLE_OWNER]);
+    public function form() {
+        AuthMiddleware::checkAuth();
+        AuthMiddleware::checkSessionTimeout();
+        SecurityMiddleware::setSecurityHeaders();
         
-        $kategori_list = $this->kategoriModel->getActive();
-        $title = 'Tambah Produk - KasirKu';
+        $produk = [];
+        $categories = $this->getCategories();
+        $page_title = 'Form Produk - KasirKu';
         
-        require VIEW_DIR . 'produk/form.php';
+        // If edit
+        if (isset($_GET['id'])) {
+            $id = (int)$_GET['id'];
+            $produk = $this->produkModel->getById($id);
+            
+            if (!$produk) {
+                set_flash('Produk tidak ditemukan', 'danger');
+                redirect('produk');
+            }
+        }
+        
+        include APP_PATH . 'Views/Produk/form.php';
     }
     
     /**
-     * Store produk
+     * Create product
      */
     public function store() {
-        AuthMiddleware::requireAnyRole([ROLE_ADMIN, ROLE_OWNER]);
+        AuthMiddleware::checkAuth();
         
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            jsonResponse(false, 'Invalid request');
+            redirect('produk/create');
         }
         
-        if (!CsrfMiddleware::verifyToken($_POST[CSRF_TOKEN_NAME] ?? '')) {
-            jsonResponse(false, 'CSRF Token tidak valid', null, 403);
-        }
+        SecurityMiddleware::validateCSRFToken();
         
-        // Get input
-        $nama_produk = sanitize($_POST['nama_produk'] ?? '');
-        $kategori_id = (int)($_POST['kategori_id'] ?? 0);
-        $harga_beli = (float)($_POST['harga_beli'] ?? 0);
-        $harga_jual = (float)($_POST['harga_jual'] ?? 0);
-        $stok = (int)($_POST['stok'] ?? 0);
-        $stok_minimum = (int)($_POST['stok_minimum'] ?? 5);
-        $satuan = sanitize($_POST['satuan'] ?? 'pcs');
-        $barcode = sanitize($_POST['barcode'] ?? '');
-        $deskripsi = sanitize($_POST['deskripsi'] ?? '');
-        
-        // Validasi
-        ValidationHelper::clearErrors();
-        ValidationHelper::required($nama_produk, 'Nama produk');
-        ValidationHelper::minValue($kategori_id, 1, 'Kategori');
-        ValidationHelper::minValue($harga_beli, 0, 'Harga beli');
-        ValidationHelper::minValue($harga_jual, 0, 'Harga jual');
-        
-        if ($harga_jual < $harga_beli) {
-            ValidationHelper::addError('Harga jual tidak boleh lebih kecil dari harga beli');
-        }
-        
-        if (!empty($barcode) && !ValidationHelper::unique($this->db, $barcode, 'produk', 'barcode', 'Barcode')) {
-            ValidationHelper::addError('Barcode sudah digunakan');
-        }
-        
-        if (ValidationHelper::hasErrors()) {
-            jsonResponse(false, ValidationHelper::getFirstError());
-        }
-        
-        // Generate kode produk
-        $kode_produk = generateProductCode();
-        
-        // Handle image upload
-        $gambar = '';
-        if (isset($_FILES['gambar']) && $_FILES['gambar']['error'] !== UPLOAD_ERR_NO_FILE) {
-            $upload_result = FileHelper::upload($_FILES['gambar'], UPLOAD_PRODUCT_DIR, ALLOWED_IMAGE_TYPES);
-            if (!$upload_result['success']) {
-                jsonResponse(false, $upload_result['message']);
-            }
-            $gambar = $upload_result['path'];
-        }
-        
-        // Insert produk
+        // Get and sanitize input
         $data = [
-            'kode_produk' => $kode_produk,
-            'nama_produk' => $nama_produk,
-            'kategori_id' => $kategori_id,
-            'deskripsi' => $deskripsi,
-            'harga_beli' => $harga_beli,
-            'harga_jual' => $harga_jual,
-            'stok' => $stok,
-            'stok_minimum' => $stok_minimum,
-            'satuan' => $satuan,
-            'barcode' => $barcode,
-            'gambar' => $gambar,
-            'status' => 1
+            'name' => sanitize($_POST['name'] ?? ''),
+            'sku' => sanitize($_POST['sku'] ?? ''),
+            'category_id' => (int)$_POST['category'] ?? 0,
+            'price' => (float)$_POST['price'] ?? 0,
+            'cost' => (float)$_POST['cost'] ?? 0,
+            'stock' => (int)$_POST['stock'] ?? 0,
+            'min_stock' => (int)$_POST['min_stock'] ?? 0,
+            'description' => sanitize($_POST['description'] ?? ''),
+            'status' => sanitize($_POST['status'] ?? 'active')
         ];
         
-        $produk_id = $this->produkModel->insert($data);
+        // Validate
+        $errors = [];
+        if (empty($data['name'])) $errors[] = 'Nama produk harus diisi';
+        if (empty($data['sku'])) $errors[] = 'SKU harus diisi';
+        if ($data['price'] <= 0) $errors[] = 'Harga harus lebih dari 0';
+        if ($data['category_id'] <= 0) $errors[] = 'Kategori harus dipilih';
         
-        if ($produk_id) {
-            logActivity($this->db, 'CREATE_PRODUK', 'produk', $produk_id, null, $data);
-            jsonResponse(true, 'Produk berhasil ditambahkan', ['id' => $produk_id]);
+        if (count($errors) > 0) {
+            $_SESSION['errors'] = $errors;
+            redirect('produk/create');
+        }
+        
+        // Create product
+        if ($this->produkModel->create($data)) {
+            set_flash('Produk berhasil ditambahkan', 'success');
+            log_activity('CREATE_PRODUCT', 'Product ' . $data['name'] . ' created');
+            redirect('produk');
         } else {
-            jsonResponse(false, 'Gagal menambahkan produk');
+            set_flash('Gagal menambahkan produk', 'danger');
+            redirect('produk/create');
         }
     }
     
     /**
-     * Show edit produk form
+     * Update product
      */
-    public function edit($id) {
-        AuthMiddleware::requireAnyRole([ROLE_ADMIN, ROLE_OWNER]);
+    public function update() {
+        AuthMiddleware::checkAuth();
         
-        $produk = $this->produkModel->getWithDetails($id);
-        if (!$produk) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             redirect('produk');
         }
         
-        $kategori_list = $this->kategoriModel->getActive();
-        $title = 'Edit Produk - KasirKu';
+        SecurityMiddleware::validateCSRFToken();
         
-        require VIEW_DIR . 'produk/form.php';
-    }
-    
-    /**
-     * Update produk
-     */
-    public function update($id) {
-        AuthMiddleware::requireAnyRole([ROLE_ADMIN, ROLE_OWNER]);
+        $id = (int)$_POST['id'] ?? 0;
         
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            jsonResponse(false, 'Invalid request');
+        if ($id <= 0) {
+            set_flash('Produk tidak ditemukan', 'danger');
+            redirect('produk');
         }
         
-        if (!CsrfMiddleware::verifyToken($_POST[CSRF_TOKEN_NAME] ?? '')) {
-            jsonResponse(false, 'CSRF Token tidak valid', null, 403);
-        }
-        
-        $produk = $this->produkModel->getById($id);
-        if (!$produk) {
-            jsonResponse(false, 'Produk tidak ditemukan', null, 404);
-        }
-        
-        // Get input
-        $nama_produk = sanitize($_POST['nama_produk'] ?? '');
-        $kategori_id = (int)($_POST['kategori_id'] ?? 0);
-        $harga_beli = (float)($_POST['harga_beli'] ?? 0);
-        $harga_jual = (float)($_POST['harga_jual'] ?? 0);
-        $stok_minimum = (int)($_POST['stok_minimum'] ?? 5);
-        $satuan = sanitize($_POST['satuan'] ?? 'pcs');
-        $barcode = sanitize($_POST['barcode'] ?? '');
-        $deskripsi = sanitize($_POST['deskripsi'] ?? '');
-        
-        // Validasi
-        ValidationHelper::clearErrors();
-        ValidationHelper::required($nama_produk, 'Nama produk');
-        ValidationHelper::minValue($kategori_id, 1, 'Kategori');
-        ValidationHelper::minValue($harga_beli, 0, 'Harga beli');
-        ValidationHelper::minValue($harga_jual, 0, 'Harga jual');
-        
-        if ($harga_jual < $harga_beli) {
-            ValidationHelper::addError('Harga jual tidak boleh lebih kecil dari harga beli');
-        }
-        
-        if (ValidationHelper::hasErrors()) {
-            jsonResponse(false, ValidationHelper::getFirstError());
-        }
-        
-        // Handle image upload
-        $gambar = $produk['gambar'];
-        if (isset($_FILES['gambar']) && $_FILES['gambar']['error'] !== UPLOAD_ERR_NO_FILE) {
-            $upload_result = FileHelper::upload($_FILES['gambar'], UPLOAD_PRODUCT_DIR, ALLOWED_IMAGE_TYPES);
-            if (!$upload_result['success']) {
-                jsonResponse(false, $upload_result['message']);
-            }
-            // Delete old image
-            if ($produk['gambar']) {
-                FileHelper::delete($produk['gambar']);
-            }
-            $gambar = $upload_result['path'];
-        }
-        
-        // Update produk
+        // Get and sanitize input
         $data = [
-            'nama_produk' => $nama_produk,
-            'kategori_id' => $kategori_id,
-            'deskripsi' => $deskripsi,
-            'harga_beli' => $harga_beli,
-            'harga_jual' => $harga_jual,
-            'stok_minimum' => $stok_minimum,
-            'satuan' => $satuan,
-            'barcode' => $barcode,
-            'gambar' => $gambar
+            'name' => sanitize($_POST['name'] ?? ''),
+            'price' => (float)$_POST['price'] ?? 0,
+            'stock' => (int)$_POST['stock'] ?? 0,
+            'status' => sanitize($_POST['status'] ?? 'active')
         ];
         
+        // Validate
+        if (empty($data['name'])) {
+            set_flash('Nama produk harus diisi', 'danger');
+            redirect('produk/' . $id . '/edit');
+        }
+        
+        // Update product
         if ($this->produkModel->update($id, $data)) {
-            logActivity($this->db, 'UPDATE_PRODUK', 'produk', $id, $produk, $data);
-            jsonResponse(true, 'Produk berhasil diupdate');
+            set_flash('Produk berhasil diperbarui', 'success');
+            log_activity('UPDATE_PRODUCT', 'Product ID ' . $id . ' updated');
+            redirect('produk');
         } else {
-            jsonResponse(false, 'Gagal update produk');
+            set_flash('Gagal memperbarui produk', 'danger');
+            redirect('produk/' . $id . '/edit');
         }
     }
     
     /**
-     * Delete produk
+     * Delete product
      */
-    public function delete($id) {
-        AuthMiddleware::requireAnyRole([ROLE_ADMIN, ROLE_OWNER]);
+    public function delete() {
+        AuthMiddleware::checkAuth();
         
-        $produk = $this->produkModel->getById($id);
-        if (!$produk) {
-            jsonResponse(false, 'Produk tidak ditemukan', null, 404);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect('produk');
         }
         
-        // Delete image
-        if ($produk['gambar']) {
-            FileHelper::delete($produk['gambar']);
+        SecurityMiddleware::validateCSRFToken();
+        
+        $id = (int)$_POST['id'] ?? 0;
+        
+        if ($id <= 0) {
+            set_flash('Produk tidak ditemukan', 'danger');
+            redirect('produk');
         }
         
-        // Soft delete (set status to 0)
-        if ($this->produkModel->update($id, ['status' => 0])) {
-            logActivity($this->db, 'DELETE_PRODUK', 'produk', $id, $produk);
-            jsonResponse(true, 'Produk berhasil dihapus');
+        if ($this->produkModel->delete($id)) {
+            set_flash('Produk berhasil dihapus', 'success');
+            log_activity('DELETE_PRODUCT', 'Product ID ' . $id . ' deleted');
         } else {
-            jsonResponse(false, 'Gagal menghapus produk');
+            set_flash('Gagal menghapus produk', 'danger');
         }
+        
+        redirect('produk');
     }
     
     /**
-     * Search produk (untuk POS)
+     * Get all categories
      */
-    public function search() {
-        AuthMiddleware::requireLogin();
-        header('Content-Type: application/json');
-        
-        $keyword = sanitize($_GET['q'] ?? '');
-        $limit = 20;
-        
-        if (strlen($keyword) < 2) {
-            jsonResponse(false, 'Keyword minimal 2 karakter');
-        }
-        
-        $produk_list = $this->produkModel->searchWithCategory($keyword, null, $limit);
-        
-        jsonResponse(true, 'Data produk', $produk_list);
+    private function getCategories() {
+        $query = "SELECT * FROM categories WHERE status = 'active' ORDER BY name";
+        $result = $this->db->query($query);
+        return $result->fetch_all(MYSQLI_ASSOC);
     }
 }
 
