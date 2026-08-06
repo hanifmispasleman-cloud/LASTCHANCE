@@ -1,447 +1,169 @@
 <?php
 /**
- * Helper Functions - Fungsi Umum KasirKu
- * 
- * File ini berisi fungsi-fungsi helper yang digunakan di seluruh aplikasi
+ * Helper - Fungsi-fungsi helper umum untuk KasirKu
  */
 
 /**
- * Format currency ke format Indonesia
- * 
- * @param float $amount
- * @return string
+ * Get base URL aplikasi
  */
-function formatCurrency($amount) {
-    return CURRENCY_SYMBOL . ' ' . number_format($amount, DECIMAL_PLACES, DECIMAL_SEPARATOR, THOUSANDS_SEPARATOR);
+if (!function_exists('base_url')) {
+    function base_url($path = '') {
+        return BASE_URL . $path;
+    }
 }
 
 /**
- * Parse currency string ke float
- * 
- * @param string $value
- * @return float
+ * Format currency ke Rupiah
  */
-function parseCurrency($value) {
-    $value = str_replace(CURRENCY_SYMBOL, '', $value);
-    $value = str_replace(THOUSANDS_SEPARATOR, '', $value);
-    $value = str_replace(DECIMAL_SEPARATOR, '.', $value);
-    return (float)$value;
+if (!function_exists('format_currency')) {
+    function format_currency($amount) {
+        return 'Rp ' . number_format($amount, 0, ',', '.');
+    }
 }
 
 /**
- * Format tanggal ke format Indonesia
- * 
- * @param string $date
- * @return string
+ * Format tanggal
  */
-function formatDate($date) {
-    if (empty($date)) return '-';
-    return date(DATE_FORMAT, strtotime($date));
-}
-
-/**
- * Format datetime ke format Indonesia
- * 
- * @param string $datetime
- * @return string
- */
-function formatDateTime($datetime) {
-    if (empty($datetime)) return '-';
-    return date(DATETIME_FORMAT, strtotime($datetime));
+if (!function_exists('format_date')) {
+    function format_date($date, $format = 'd/m/Y') {
+        return date($format, strtotime($date));
+    }
 }
 
 /**
  * Format waktu
- * 
- * @param string $time
- * @return string
  */
-function formatTime($time) {
-    if (empty($time)) return '-';
-    return date(TIME_FORMAT, strtotime($time));
+if (!function_exists('format_time')) {
+    function format_time($date, $format = 'H:i') {
+        return date($format, strtotime($date));
+    }
 }
 
 /**
  * Redirect ke halaman lain
- * 
- * @param string $location
  */
-function redirect($location) {
-    header('Location: ' . BASE_URL . $location);
-    exit();
-}
-
-/**
- * Generate CSRF Token
- * 
- * @return string
- */
-function generateCsrfToken() {
-    if (!isset($_SESSION[CSRF_TOKEN_NAME])) {
-        $_SESSION[CSRF_TOKEN_NAME] = bin2hex(random_bytes(32));
+if (!function_exists('redirect')) {
+    function redirect($path) {
+        header('Location: ' . BASE_URL . $path);
+        exit();
     }
-    return $_SESSION[CSRF_TOKEN_NAME];
 }
 
 /**
- * Verify CSRF Token
- * 
- * @param string $token
- * @return bool
+ * Set flash message
  */
-function verifyCsrfToken($token) {
-    return isset($_SESSION[CSRF_TOKEN_NAME]) && hash_equals($_SESSION[CSRF_TOKEN_NAME], $token);
+if (!function_exists('set_flash')) {
+    function set_flash($message, $type = 'info') {
+        $_SESSION['flash'] = [
+            'message' => $message,
+            'type' => $type
+        ];
+    }
 }
 
 /**
- * Sanitize input string
- * 
- * @param string $input
- * @return string
+ * Get flash message
  */
-function sanitize($input) {
-    $input = trim($input);
-    $input = stripslashes($input);
-    $input = htmlspecialchars($input, ENT_QUOTES, 'UTF-8');
-    return $input;
-}
-
-/**
- * Validasi email
- * 
- * @param string $email
- * @return bool
- */
-function isValidEmail($email) {
-    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
-}
-
-/**
- * Hash password
- * 
- * @param string $password
- * @return string
- */
-function hashPassword($password) {
-    return password_hash($password, PASSWORD_ALGO);
-}
-
-/**
- * Verify password
- * 
- * @param string $password
- * @param string $hash
- * @return bool
- */
-function verifyPassword($password, $hash) {
-    return password_verify($password, $hash);
-}
-
-/**
- * Generate nomor unik untuk transaksi
- * 
- * @param string $prefix
- * @return string
- */
-function generateUniqueNumber($prefix = '') {
-    return $prefix . date('YmdHis') . rand(1000, 9999);
-}
-
-/**
- * Generate kode produk unik
- * 
- * @return string
- */
-function generateProductCode() {
-    return 'PRD' . date('YmdHis') . rand(100, 999);
-}
-
-/**
- * Convert angka ke teks (untuk struk)
- * 
- * @param int $num
- * @return string
- */
-function numberToWords($num) {
-    $num = abs($num);
-    $words = '';
-    $list1 = array(
-        '', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan',
-        'sepuluh', 'sebelas', 'dua belas', 'tiga belas', 'empat belas', 'lima belas',
-        'enam belas', 'tujuh belas', 'delapan belas', 'sembilan belas'
-    );
-    $list2 = array('', 'dua puluh', 'tiga puluh', 'empat puluh', 'lima puluh', 'enam puluh',
-        'tujuh puluh', 'delapan puluh', 'sembilan puluh'
-    );
-    $list3 = array('', 'seratus', 'dua ratus', 'tiga ratus', 'empat ratus', 'lima ratus',
-        'enam ratus', 'tujuh ratus', 'delapan ratus', 'sembilan ratus'
-    );
-    $list4 = array('', 'seribu', 'sejuta', 'setriliun', 'setriliun', 'semiliar');
-
-    $num = number_format($num, 2, '.', ',');
-    $num_arr = explode('.', $num);
-    $wholenum = $num_arr[0];
-    $decnum = $num_arr[1];
-    $whole_arr = array_reverse(explode(',', number_format($wholenum, 0, '.', ',')));
-    krsort($whole_arr, 1);
-    $tn = count($whole_arr) - 1;
-    $words = '';
-    foreach ($whole_arr as $w) {
-        $w = intval($w);
-        $string = '';
-        if ($w >= 100) {
-            $hundreds = intval($w / 100);
-            $remainder = intval($w % 100);
-            $string .= $list3[$hundreds] . ' ';
-            $w = $remainder;
+if (!function_exists('get_flash')) {
+    function get_flash() {
+        if (isset($_SESSION['flash'])) {
+            $flash = $_SESSION['flash'];
+            unset($_SESSION['flash']);
+            return $flash;
         }
-        if ($w >= 20) {
-            $tens = intval($w / 10);
-            $units = intval($w % 10);
-            $string .= $list2[$tens];
-            if ($units > 0)
-                $string .= ' ' . $list1[$units];
-        } else if ($w > 0)
-            $string .= $list1[$w];
-        if ($w == 0 and $tn == 1)
-            break;
-        if ($string != '') {
-            $words .= $string . $list4[$tn] . ' ';
-        }
-        $tn--;
+        return null;
     }
-
-    if ($decnum > 0) {
-        $words .= ' koma ';
-        $decnum_arr = str_split($decnum);
-        foreach ($decnum_arr as $d)
-            $words .= $list1[$d] . ' ';
-    }
-    return trim($words);
 }
 
 /**
- * Get file size dalam format yang readable
- * 
- * @param int $bytes
- * @return string
+ * Check if user is authenticated
  */
-function formatFileSize($bytes) {
-    $size = ['B', 'KB', 'MB', 'GB', 'TB'];
-    for ($i = 0; $bytes > 1024 && $i < count($size) - 1; $i++) {
-        $bytes /= 1024;
+if (!function_exists('is_authenticated')) {
+    function is_authenticated() {
+        return isset($_SESSION['user']);
     }
-    return round($bytes, 2) . ' ' . $size[$i];
 }
 
 /**
- * Check apakah user sudah login
- * 
- * @return bool
+ * Get current user
  */
-function isLoggedIn() {
-    return isset($_SESSION['user_id']) && isset($_SESSION['username']);
-}
-
-/**
- * Get data user yang sedang login
- * 
- * @return array|null
- */
-function getLoggedInUser() {
-    if (!isLoggedIn()) return null;
-    return [
-        'id' => $_SESSION['user_id'],
-        'username' => $_SESSION['username'],
-        'nama_lengkap' => $_SESSION['nama_lengkap'],
-        'role' => $_SESSION['role'],
-        'email' => $_SESSION['email'] ?? null
-    ];
+if (!function_exists('current_user')) {
+    function current_user() {
+        return $_SESSION['user'] ?? null;
+    }
 }
 
 /**
  * Check user role
- * 
- * @param string $role
- * @return bool
  */
-function hasRole($role) {
-    return isLoggedIn() && $_SESSION['role'] === $role;
+if (!function_exists('has_role')) {
+    function has_role($role) {
+        $user = current_user();
+        if (!$user) return false;
+        return $user['role'] === $role;
+    }
 }
 
 /**
- * Check user memiliki salah satu role
- * 
- * @param array $roles
- * @return bool
+ * Sanitize input
  */
-function hasAnyRole($roles) {
-    if (!isLoggedIn()) return false;
-    return in_array($_SESSION['role'], $roles);
+if (!function_exists('sanitize')) {
+    function sanitize($input) {
+        return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    }
+}
+
+/**
+ * Validate email
+ */
+if (!function_exists('is_valid_email')) {
+    function is_valid_email($email) {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+/**
+ * Validate phone number
+ */
+if (!function_exists('is_valid_phone')) {
+    function is_valid_phone($phone) {
+        return preg_match('/^(\+62|62|0)[0-9]{9,12}$/', preg_replace('/[^0-9+]/', '', $phone));
+    }
+}
+
+/**
+ * Generate random string
+ */
+if (!function_exists('generate_random')) {
+    function generate_random($length = 10) {
+        $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $result = '';
+        for ($i = 0; $i < $length; $i++) {
+            $result .= $characters[rand(0, strlen($characters) - 1)];
+        }
+        return $result;
+    }
+}
+
+/**
+ * Generate SKU
+ */
+if (!function_exists('generate_sku')) {
+    function generate_sku($prefix = 'PRD') {
+        return strtoupper($prefix . '-' . date('YmdHis') . '-' . generate_random(4));
+    }
 }
 
 /**
  * Log activity
- * 
- * @param PDO $db
- * @param string $action
- * @param string $table_name
- * @param int $record_id
- * @param mixed $old_value
- * @param mixed $new_value
  */
-function logActivity($db, $action, $table_name = null, $record_id = null, $old_value = null, $new_value = null) {
-    if (!isLoggedIn()) return false;
-    
-    try {
-        $user_id = $_SESSION['user_id'];
-        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-        
-        $sql = "INSERT INTO activity_log (user_id, action, table_name, record_id, old_value, new_value, ip_address) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
-        
-        $stmt = $db->prepare($sql);
-        $stmt->execute([
-            $user_id,
-            $action,
-            $table_name,
-            $record_id,
-            is_array($old_value) ? json_encode($old_value) : $old_value,
-            is_array($new_value) ? json_encode($new_value) : $new_value,
-            $ip_address
-        ]);
-        
-        return true;
-    } catch (PDOException $e) {
-        error_log('Log Activity Error: ' . $e->getMessage());
-        return false;
+if (!function_exists('log_activity')) {
+    function log_activity($action, $details = '') {
+        $log_file = LOG_DIR . 'activity-' . date('Y-m-d') . '.log';
+        $user = current_user();
+        $message = date('H:i:s') . ' | ' . ($user['id'] ?? 'System') . ' | ' . $action . ' | ' . $details . PHP_EOL;
+        file_put_contents($log_file, $message, FILE_APPEND);
     }
-}
-
-/**
- * Get current page number
- * 
- * @return int
- */
-function getCurrentPage() {
-    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-    return $page < 1 ? 1 : $page;
-}
-
-/**
- * Get offset untuk pagination
- * 
- * @param int $page
- * @param int $per_page
- * @return int
- */
-function getPageOffset($page = 1, $per_page = ITEMS_PER_PAGE) {
-    return ($page - 1) * $per_page;
-}
-
-/**
- * Generate pagination HTML
- * 
- * @param int $total
- * @param int $per_page
- * @param int $current_page
- * @param string $base_url
- * @return string
- */
-function generatePagination($total, $per_page = ITEMS_PER_PAGE, $current_page = 1, $base_url = '') {
-    $total_pages = ceil($total / $per_page);
-    if ($total_pages <= 1) return '';
-    
-    $html = '<nav aria-label="Pagination Navigation"><ul class="pagination">';
-    
-    // Previous
-    if ($current_page > 1) {
-        $html .= '<li class="page-item"><a class="page-link" href="' . $base_url . '?page=' . ($current_page - 1) . '">Previous</a></li>';
-    } else {
-        $html .= '<li class="page-item disabled"><span class="page-link">Previous</span></li>';
-    }
-    
-    // Pages
-    for ($i = 1; $i <= $total_pages; $i++) {
-        if ($i == $current_page) {
-            $html .= '<li class="page-item active"><span class="page-link">' . $i . '</span></li>';
-        } else {
-            $html .= '<li class="page-item"><a class="page-link" href="' . $base_url . '?page=' . $i . '">' . $i . '</a></li>';
-        }
-    }
-    
-    // Next
-    if ($current_page < $total_pages) {
-        $html .= '<li class="page-item"><a class="page-link" href="' . $base_url . '?page=' . ($current_page + 1) . '">Next</a></li>';
-    } else {
-        $html .= '<li class="page-item disabled"><span class="page-link">Next</span></li>';
-    }
-    
-    $html .= '</ul></nav>';
-    return $html;
-}
-
-/**
- * Get HTTP response message
- * 
- * @param int $code
- * @return string
- */
-function getHttpResponseMessage($code) {
-    $messages = [
-        200 => 'OK',
-        201 => 'Created',
-        400 => 'Bad Request',
-        401 => 'Unauthorized',
-        403 => 'Forbidden',
-        404 => 'Not Found',
-        500 => 'Internal Server Error',
-        503 => 'Service Unavailable'
-    ];
-    
-    return $messages[$code] ?? 'Unknown';
-}
-
-/**
- * Output JSON response
- * 
- * @param bool $success
- * @param string $message
- * @param mixed $data
- * @param int $code
- */
-function jsonResponse($success, $message, $data = null, $code = 200) {
-    header('Content-Type: application/json');
-    http_response_code($code);
-    
-    $response = [
-        'success' => $success,
-        'message' => $message,
-        'data' => $data
-    ];
-    
-    echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    exit();
-}
-
-/**
- * Encode data to JSON
- * 
- * @param mixed $data
- * @return string
- */
-function toJson($data) {
-    return json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-}
-
-/**
- * Decode JSON string
- * 
- * @param string $json
- * @return mixed
- */
-function fromJson($json) {
-    return json_decode($json, true);
 }
 
 ?>
