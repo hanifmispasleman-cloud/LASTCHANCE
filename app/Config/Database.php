@@ -1,66 +1,54 @@
 <?php
 /**
- * Konfigurasi Database KasirKu
- * 
- * File ini berisi konfigurasi koneksi ke database MySQL
- * Gunakan prepared statement untuk keamanan
+ * Database - Class untuk koneksi database
  */
 
 class Database {
-    private $host = 'localhost';
-    private $db_name = 'kasirku';
-    private $db_user = 'root';
-    private $db_pass = '';
-    private $charset = 'utf8mb4';
     
+    private $host = DB_HOST;
+    private $user = DB_USER;
+    private $pass = DB_PASS;
+    private $name = DB_NAME;
     private $conn;
-
+    
     /**
-     * Koneksi ke database
-     * 
-     * @return PDO
+     * Connect to database
      */
     public function connect() {
-        $this->conn = null;
-
-        try {
-            $dsn = 'mysql:host=' . $this->host . 
-                   ';dbname=' . $this->db_name . 
-                   ';charset=' . $this->charset;
-
-            $options = [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ];
-
-            $this->conn = new PDO($dsn, $this->db_user, $this->db_pass, $options);
-
-        } catch (PDOException $e) {
-            error_log('Database Connection Error: ' . $e->getMessage());
-            die('Database connection failed. Please check error log.');
+        $this->conn = new mysqli(
+            $this->host,
+            $this->user,
+            $this->pass,
+            $this->name
+        );
+        
+        // Check connection
+        if ($this->conn->connect_error) {
+            error_log('Database Connection Error: ' . $this->conn->connect_error);
+            die('Koneksi database gagal');
         }
-
+        
+        // Set charset
+        $this->conn->set_charset('utf8mb4');
+        
         return $this->conn;
     }
-
+    
     /**
-     * Dapatkan koneksi database
-     * 
-     * @return PDO
+     * Get connection
      */
     public function getConnection() {
-        if ($this->conn === null) {
-            $this->connect();
-        }
         return $this->conn;
     }
-
+    
     /**
-     * Close database connection
+     * Close connection
      */
-    public function closeConnection() {
-        $this->conn = null;
+    public function close() {
+        if ($this->conn) {
+            $this->conn->close();
+        }
     }
 }
+
 ?>

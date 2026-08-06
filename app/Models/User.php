@@ -3,168 +3,149 @@
  * User Model - Model untuk tabel users
  */
 
-class User extends BaseModel {
+class User {
     
-    protected $table = 'users';
+    private $db;
+    private $table = 'users';
+    
+    public function __construct($database) {
+        $this->db = $database;
+    }
     
     /**
-     * Get user by username
-     * 
-     * @param string $username
-     * @return array|null
+     * Get user by ID
      */
-    public function getByUsername($username) {
-        return $this->getByColumn('username', $username);
+    public function getById($id) {
+        $query = "SELECT * FROM {$this->table} WHERE id = ? LIMIT 1";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_assoc();
     }
     
     /**
      * Get user by email
-     * 
-     * @param string $email
-     * @return array|null
      */
     public function getByEmail($email) {
-        return $this->getByColumn('email', $email);
+        $query = "SELECT * FROM {$this->table} WHERE email = ? LIMIT 1";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_assoc();
     }
     
     /**
-     * Login user
-     * 
-     * @param string $username
-     * @param string $password
-     * @return array|null
-     */
-    public function login($username, $password) {
-        $user = $this->getByUsername($username);
-        
-        if (!$user) {
-            return null;
-        }
-        
-        if (!password_verify($password, $user['password'])) {
-            return null;
-        }
-        
-        if (!$user['status']) {
-            return null; // User not active
-        }
-        
-        // Update last login
-        $this->update($user['id'], ['last_login' => date('Y-m-d H:i:s')]);
-        
-        return $user;
-    }
-    
-    /**
-     * Create user
-     * 
-     * @param array $data
-     * @return int
+     * Create new user
      */
     public function create($data) {
+        $query = "INSERT INTO {$this->table} (name, email, password, phone, role, status, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, NOW())";
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('ssssss', 
+            $data['name'],
+            $data['email'],
+            $data['password'],
+            $data['phone'],
+            $data['role'],
+            $data['status']
+        );
+        
+        return $stmt->execute();
+    }
+    
+    /**
+     * Update user
+     */
+    public function update($id, $data) {
+        $fields = [];
+        $params = [];
+        $types = '';
+        
+        if (isset($data['name'])) {
+            $fields[] = 'name = ?';
+            $params[] = $data['name'];
+            $types .= 's';
+        }
+        
+        if (isset($data['email'])) {
+            $fields[] = 'email = ?';
+            $params[] = $data['email'];
+            $types .= 's';
+        }
+        
+        if (isset($data['phone'])) {
+            $fields[] = 'phone = ?';
+            $params[] = $data['phone'];
+            $types .= 's';
+        }
+        
         if (isset($data['password'])) {
-            $data['password'] = password_hash($data['password'], PASSWORD_BCRYPT);
+            $fields[] = 'password = ?';
+            $params[] = $data['password'];
+            $types .= 's';
         }
         
-        return $this->insert($data);
+        if (isset($data['status'])) {
+            $fields[] = 'status = ?';
+            $params[] = $data['status'];
+            $types .= 's';
+        }
+        
+        $fields[] = 'updated_at = NOW()';
+        $params[] = $id;
+        $types .= 'i';
+        
+        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE id = ?";
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        
+        return $stmt->execute();
     }
     
     /**
-     * Update user password
-     * 
-     * @param int $user_id
-     * @param string $new_password
-     * @return bool
+     * Delete user
      */
-    public function updatePassword($user_id, $new_password) {
-        $hashed_password = password_hash($new_password, PASSWORD_BCRYPT);
-        return $this->update($user_id, ['password' => $hashed_password]);
+    public function delete($id) {
+        $query = "DELETE FROM {$this->table} WHERE id = ?";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('i', $id);
+        return $stmt->execute();
     }
     
     /**
-     * Verify user password
-     * 
-     * @param int $user_id
-     * @param string $password
-     * @return bool
+     * Get all users with pagination
      */
-    public function verifyPassword($user_id, $password) {
-        $user = $this->getById($user_id);
-        if (!$user) return false;
-        return password_verify($password, $user['password']);
+    public function getAll($limit = 10, $offset = 0) {
+        $query = "SELECT * FROM {$this->table} ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('ii', $limit, $offset);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
     
     /**
-     * Get users by role
-     * 
-     * @param string $role
-     * @return array
+     * Count total users
      */
-    public function getByRole($role) {
-        $sql = "SELECT * FROM {$this->table} WHERE role = ? AND status = 1 ORDER BY nama_lengkap ASC";
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$role]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return [];
-        }
+    public function count() {
+        $query = "SELECT COUNT(*) as total FROM {$this->table}";
+        $result = $this->db->query($query);
+        return $result->fetch_assoc()['total'];
     }
     
     /**
-     * Check username available
-     * 
-     * @param string $username
-     * @param int $exclude_user_id
-     * @return bool
+     * Verify password
      */
-    public function isUsernameAvailable($username, $exclude_user_id = null) {
-        $sql = "SELECT COUNT(*) as count FROM {$this->table} WHERE username = ?";
-        $params = [$username];
-        
-        if ($exclude_user_id) {
-            $sql .= " AND id != ?";
-            $params[] = $exclude_user_id;
-        }
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $result['count'] == 0;
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return false;
-        }
+    public function verifyPassword($plain_password, $hashed_password) {
+        return password_verify($plain_password, $hashed_password);
     }
     
     /**
-     * Check email available
-     * 
-     * @param string $email
-     * @param int $exclude_user_id
-     * @return bool
+     * Hash password
      */
-    public function isEmailAvailable($email, $exclude_user_id = null) {
-        $sql = "SELECT COUNT(*) as count FROM {$this->table} WHERE email = ?";
-        $params = [$email];
-        
-        if ($exclude_user_id) {
-            $sql .= " AND id != ?";
-            $params[] = $exclude_user_id;
-        }
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            return $result['count'] == 0;
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return false;
-        }
+    public function hashPassword($password) {
+        return password_hash($password, PASSWORD_DEFAULT);
     }
 }
 

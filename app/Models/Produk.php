@@ -1,187 +1,193 @@
 <?php
 /**
- * Produk Model - Model untuk tabel produk
+ * Produk Model - Model untuk tabel products
  */
 
-class Produk extends BaseModel {
+class Produk {
     
-    protected $table = 'produk';
+    private $db;
+    private $table = 'products';
     
-    /**
-     * Get produk by kode
-     * 
-     * @param string $kode_produk
-     * @return array|null
-     */
-    public function getByKode($kode_produk) {
-        return $this->getByColumn('kode_produk', $kode_produk);
+    public function __construct($database) {
+        $this->db = $database;
     }
     
     /**
-     * Get produk by barcode
-     * 
-     * @param string $barcode
-     * @return array|null
+     * Get product by ID
      */
-    public function getByBarcode($barcode) {
-        return $this->getByColumn('barcode', $barcode);
+    public function getById($id) {
+        $query = "SELECT * FROM {$this->table} WHERE id = ? LIMIT 1";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_assoc();
     }
     
     /**
-     * Get produk by kategori
-     * 
-     * @param int $kategori_id
-     * @param int $limit
-     * @param int $offset
-     * @return array
+     * Get product by SKU
      */
-    public function getByKategori($kategori_id, $limit = null, $offset = null) {
-        $sql = "SELECT * FROM {$this->table} WHERE kategori_id = ? AND status = 1 ORDER BY nama_produk ASC";
-        
-        if ($limit !== null) {
-            $sql .= " LIMIT {$limit}";
-            if ($offset !== null) {
-                $sql .= " OFFSET {$offset}";
-            }
-        }
-        
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$kategori_id]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return [];
-        }
+    public function getBySku($sku) {
+        $query = "SELECT * FROM {$this->table} WHERE sku = ? LIMIT 1";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('s', $sku);
+        $stmt->execute();
+        return $stmt->get_result()->fetch_assoc();
     }
     
     /**
-     * Get produk hampir habis (stok <= stok_minimum)
-     * 
-     * @param int $limit
-     * @return array
+     * Get all products
      */
-    public function getLowStock($limit = 10) {
-        $sql = "SELECT * FROM {$this->table} 
-                WHERE status = 1 AND stok <= stok_minimum 
-                ORDER BY stok ASC LIMIT {$limit}";
+    public function getAll($limit = 10, $offset = 0, $filters = []) {
+        $query = "SELECT * FROM {$this->table} WHERE 1=1";
+        $params = [];
+        $types = '';
         
-        try {
-            $stmt = $this->db->query($sql);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return [];
+        if (isset($filters['status'])) {
+            $query .= " AND status = ?";
+            $params[] = $filters['status'];
+            $types .= 's';
         }
+        
+        if (isset($filters['category_id'])) {
+            $query .= " AND category_id = ?";
+            $params[] = $filters['category_id'];
+            $types .= 'i';
+        }
+        
+        if (isset($filters['search'])) {
+            $query .= " AND (name LIKE ? OR sku LIKE ?)";
+            $search = '%' . $filters['search'] . '%';
+            $params[] = $search;
+            $params[] = $search;
+            $types .= 'ss';
+        }
+        
+        $query .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        $params[] = $limit;
+        $params[] = $offset;
+        $types .= 'ii';
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        
+        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     }
     
     /**
-     * Get produk aktif
-     * 
-     * @param int $limit
-     * @param int $offset
-     * @return array
+     * Create product
      */
-    public function getActive($limit = null, $offset = null) {
-        $sql = "SELECT * FROM {$this->table} WHERE status = 1 ORDER BY nama_produk ASC";
+    public function create($data) {
+        $query = "INSERT INTO {$this->table} 
+                  (name, sku, category_id, price, cost, stock, min_stock, description, status, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
-        if ($limit !== null) {
-            $sql .= " LIMIT {$limit}";
-            if ($offset !== null) {
-                $sql .= " OFFSET {$offset}";
-            }
-        }
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('ssiiddiis', 
+            $data['name'],
+            $data['sku'],
+            $data['category_id'],
+            $data['price'],
+            $data['cost'],
+            $data['stock'],
+            $data['min_stock'],
+            $data['description'],
+            $data['status']
+        );
         
-        try {
-            $stmt = $this->db->query($sql);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return [];
-        }
+        return $stmt->execute();
     }
     
     /**
-     * Search produk dengan detail
-     * 
-     * @param string $keyword
-     * @param int $kategori_id
-     * @param int $limit
-     * @param int $offset
-     * @return array
+     * Update product
      */
-    public function searchWithCategory($keyword, $kategori_id = null, $limit = null, $offset = null) {
-        $sql = "SELECT p.*, k.nama_kategori FROM {$this->table} p 
-                LEFT JOIN kategori k ON p.kategori_id = k.id 
-                WHERE p.status = 1 AND 
-                (p.nama_produk LIKE ? OR p.kode_produk LIKE ? OR p.barcode LIKE ?)";
+    public function update($id, $data) {
+        $fields = [];
+        $params = [];
+        $types = '';
         
-        $params = ['%' . $keyword . '%', '%' . $keyword . '%', '%' . $keyword . '%'];
-        
-        if ($kategori_id) {
-            $sql .= " AND p.kategori_id = ?";
-            $params[] = $kategori_id;
+        if (isset($data['name'])) {
+            $fields[] = 'name = ?';
+            $params[] = $data['name'];
+            $types .= 's';
         }
         
-        $sql .= " ORDER BY p.nama_produk ASC";
-        
-        if ($limit !== null) {
-            $sql .= " LIMIT {$limit}";
-            if ($offset !== null) {
-                $sql .= " OFFSET {$offset}";
-            }
+        if (isset($data['price'])) {
+            $fields[] = 'price = ?';
+            $params[] = $data['price'];
+            $types .= 'd';
         }
         
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return [];
+        if (isset($data['stock'])) {
+            $fields[] = 'stock = ?';
+            $params[] = $data['stock'];
+            $types .= 'i';
         }
+        
+        if (isset($data['status'])) {
+            $fields[] = 'status = ?';
+            $params[] = $data['status'];
+            $types .= 's';
+        }
+        
+        $fields[] = 'updated_at = NOW()';
+        $params[] = $id;
+        $types .= 'i';
+        
+        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE id = ?";
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        
+        return $stmt->execute();
     }
     
     /**
-     * Update stok produk
-     * 
-     * @param int $produk_id
-     * @param int $qty_change (positif untuk tambah, negatif untuk kurangi)
-     * @return bool
+     * Delete product
      */
-    public function updateStok($produk_id, $qty_change) {
-        $produk = $this->getById($produk_id);
-        if (!$produk) return false;
-        
-        $new_stok = $produk['stok'] + $qty_change;
-        if ($new_stok < 0) $new_stok = 0;
-        
-        return $this->update($produk_id, ['stok' => $new_stok]);
+    public function delete($id) {
+        $query = "DELETE FROM {$this->table} WHERE id = ?";
+        $stmt = $this->db->prepare($query);
+        $stmt->bind_param('i', $id);
+        return $stmt->execute();
     }
     
     /**
-     * Get produk dengan informasi stok lengkap
-     * 
-     * @param int $id
-     * @return array|null
+     * Get low stock products
      */
-    public function getWithDetails($id) {
-        $sql = "SELECT p.*, k.nama_kategori,
-                CASE WHEN p.stok <= p.stok_minimum THEN 'danger'
-                     WHEN p.stok <= (p.stok_minimum * 1.5) THEN 'warning'
-                     ELSE 'success' END as stok_status
-                FROM {$this->table} p
-                LEFT JOIN kategori k ON p.kategori_id = k.id
-                WHERE p.id = ?";
+    public function getLowStock() {
+        $query = "SELECT * FROM {$this->table} WHERE stock <= min_stock AND status = 'active' ORDER BY stock ASC";
+        $result = $this->db->query($query);
+        return $result->fetch_all(MYSQLI_ASSOC);
+    }
+    
+    /**
+     * Count total products
+     */
+    public function count($filters = []) {
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1=1";
+        $params = [];
+        $types = '';
         
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$id]);
-            return $stmt->fetch(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            error_log('Database Error: ' . $e->getMessage());
-            return null;
+        if (isset($filters['status'])) {
+            $query .= " AND status = ?";
+            $params[] = $filters['status'];
+            $types .= 's';
         }
+        
+        if (isset($filters['category_id'])) {
+            $query .= " AND category_id = ?";
+            $params[] = $filters['category_id'];
+            $types .= 'i';
+        }
+        
+        $stmt = $this->db->prepare($query);
+        if ($types) {
+            $stmt->bind_param($types, ...$params);
+        }
+        $stmt->execute();
+        
+        return $stmt->get_result()->fetch_assoc()['total'];
     }
 }
 
