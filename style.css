@@ -1,0 +1,32 @@
+:root {
+    --sidebar-width: 240px;
+    --primary-color: #0d6efd;
+    --bg-light: #f8f9fa;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; overflow-x: hidden; }
+.sidebar { width: var(--sidebar-width); min-height: calc(100vh - 56px); position: sticky; top: 56px; transition: all 0.3s; z-index: 100; }
+.sidebar.collapsed { margin-left: calc(-1 * var(--sidebar-width)); width: 0; overflow: hidden; }
+.sidebar .list-group-item { border: none; padding: 12px 20px; color: #495057; transition: all 0.2s; font-size: 0.95rem; }
+.sidebar .list-group-item:hover { background-color: #e9ecef; color: var(--primary-color); }
+.sidebar .list-group-item.active { background-color: var(--primary-color); color: white; border-radius: 0; }
+.sidebar .list-group-item i { width: 20px; text-align: center; }
+#page-content-wrapper { min-width: 0; transition: all 0.3s; }
+.card { border-radius: 10px; border: none; }
+.card-header { border-radius: 10px 10px 0 0 !important; border-bottom: 1px solid rgba(0,0,0,0.08); }
+.stat-card { border-radius: 12px; transition: transform 0.2s; }
+.stat-card:hover { transform: translateY(-3px); }
+.table th { font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.table td { vertical-align: middle; font-size: 0.9rem; }
+.badge { font-weight: 500; padding: 5px 10px; border-radius: 6px; }
+.btn { border-radius: 8px; font-weight: 500; }
+.btn-primary { background-color: var(--primary-color); }
+.form-control, .form-select { border-radius: 8px; border: 1px solid #dee2e6; padding: 10px 14px; }
+.form-control:focus, .form-select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.15); }
+#searchResults { border-radius: 0 0 10px 10px; overflow: hidden; }
+#searchResults .list-group-item { border-left: none; border-right: none; cursor: pointer; }
+#searchResults .list-group-item:hover { background-color: #e9ecef; }
+@media (max-width: 992px) {
+    .sidebar { position: fixed; left: calc(-1 * var(--sidebar-width)); height: 100vh; z-index: 1050; top: 0; padding-top: 60px; }
+    .sidebar.show { left: 0; box-shadow: 5px 0 15px rgba(0,0,0,0.2); }
+}
