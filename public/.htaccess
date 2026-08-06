@@ -1,0 +1,31 @@
+<?php
+/**
+ * .htaccess - Konfigurasi untuk Apache Server
+ * 
+ * Mengatur URL rewriting dan keamanan
+ */
+?>
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Set base directory
+RewriteBase /kasirku/
+
+# Remove index.php dari URL
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Prevent access to sensitive directories
+<FilesMatch "\.(env|json|lock)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
+
+# Enable GZIP compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript
+</IfModule>
